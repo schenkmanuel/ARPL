@@ -404,7 +404,7 @@ class VialyticsTrafficSigns_OSR(Dataset):
                                       classes_with_subfolders=[], do_class_grouping=False)
 
         self.label_index = get_label_index(include_background_training_classes=True, include_unknown_classes=True)
-        self.img_dim = img_size  # format: (w, h)
+        self.img_dim = (img_size, img_size)  # format: (w, h)
 
     def __len__(self):
         return len(self.data)
@@ -416,8 +416,8 @@ class VialyticsTrafficSigns_OSR(Dataset):
         class_id = self.label_index[class_name]
         img_tensor = torch.from_numpy(img)
         img_tensor = img_tensor.permute(2, 0, 1)
-        class_id = torch.tensor([class_id])
-        return img_tensor, class_id
+        class_id = torch.tensor(class_id)
+        return img_tensor.float(), class_id
 
         # train_transform = transforms.Compose([
         #     transforms.Resize((img_size, img_size)),
