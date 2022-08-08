@@ -10,7 +10,7 @@ from torchvision.datasets import MNIST, CIFAR10, CIFAR100, SVHN
 from torch.utils.data import Dataset, DataLoader
 import glob
 import os.path as osp
-from ARPL.class_grouping_traffic_signs import get_group, get_label_index
+from class_grouping_traffic_signs import get_group, get_label_index
 import cv2
 
 class MNISTRGB(MNIST):
@@ -322,13 +322,14 @@ class Tiny_ImageNet_OSR(object):
         print('All Test: ', (len(testset) + len(outset)))
 
 
-def prepare_data(dataroot, subdirectory, empty_classes, classes_with_subfolders):
+def prepare_data(dataroot, subdirectory, empty_classes, classes_with_subfolders, do_class_grouping):
     data = []
     folder_list = glob.glob(osp.join(dataroot, subdirectory, "*"))
     for class_path in folder_list:
         class_name = class_path.split("/")[-1]
-        # some classes are grouped for training. Get group name in that case
-        class_name = get_group(class_name)
+        # some classes are grouped for training. Get group name in that case. Unless for unknown data
+        if do_class_grouping:
+            class_name = get_group(class_name)
         # empty classes
         if class_name in empty_classes:  # Skip folders that do not contain training images
             continue
@@ -389,18 +390,18 @@ class VialyticsTrafficSigns_OSR(Dataset):
 
         if data_loader_type == 'train':
             self.data = prepare_data(dataroot=dataroot, subdirectory='train/known', empty_classes=empty_classes,
-                                     classes_with_subfolders=classes_with_subfolders)
+                                     classes_with_subfolders=classes_with_subfolders, do_class_grouping=True)
 
         elif data_loader_type == 'test':
             self.data = prepare_data(dataroot=dataroot, subdirectory='test/known', empty_classes=[],
-                                     classes_with_subfolders=[])
+                                     classes_with_subfolders=[], do_class_grouping=True)
 
         # unknown data consists of background classes (not used in training) and unknown classes
         elif data_loader_type == 'out':
             self.data = prepare_data(dataroot=dataroot, subdirectory='test/unknown', empty_classes=empty_classes,
-                                     classes_with_subfolders=classes_with_subfolders)
+                                     classes_with_subfolders=classes_with_subfolders, do_class_grouping=False)
             self.data += prepare_data(dataroot=dataroot, subdirectory='test/background', empty_classes=[],
-                                      classes_with_subfolders=[])
+                                      classes_with_subfolders=[], do_class_grouping=False)
 
         self.label_index = get_label_index(include_background_training_classes=True, include_unknown_classes=True)
         self.img_dim = img_size  # format: (w, h)
