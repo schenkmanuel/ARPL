@@ -2,9 +2,16 @@ import os
 import torch
 import numpy as np
 from PIL import Image
+import PIL
+PIL.PILLOW_VERSION = PIL.__version__  # workaround for ImportError: cannot import name 'PILLOW_VERSION' from 'PIL'
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from torchvision.datasets import MNIST, CIFAR10, CIFAR100, SVHN
+from torch.utils.data import Dataset, DataLoader
+import glob
+import os.path as osp
+from ARPL.class_grouping_traffic_signs import get_group, get_label_index
+import cv2
 
 class MNISTRGB(MNIST):
     """MNIST Dataset.
@@ -313,3 +320,112 @@ class Tiny_ImageNet_OSR(object):
 
         print('Train: ', len(trainset), 'Test: ', len(testset), 'Out: ', len(outset))
         print('All Test: ', (len(testset) + len(outset)))
+
+
+def prepare_data(dataroot, subdirectory, empty_classes, classes_with_subfolders):
+    data = []
+    folder_list = glob.glob(osp.join(dataroot, subdirectory, "*"))
+    for class_path in folder_list:
+        class_name = class_path.split("/")[-1]
+        # some classes are grouped for training. Get group name in that case
+        class_name = get_group(class_name)
+        # empty classes
+        if class_name in empty_classes:  # Skip folders that do not contain training images
+            continue
+        # classes with subfolders
+        elif class_name in classes_with_subfolders:
+            folder_list_subfolders = glob.glob(osp.join(dataroot, subdirectory, class_name, "*"))
+            for subclass_path in folder_list_subfolders:
+                # if subclass_path is a folder, get images from that folder
+                if osp.isdir(subclass_path):
+                    for img_path in glob.glob(subclass_path + "/*"):
+                        if not img_path.endswith(('jpeg', 'jpg', 'png', 'ppm')):
+                            continue
+                        data.append([img_path, class_name])
+                else:
+                    # if subclass_path is an image, get the images
+                    if not img_path.endswith(('jpeg', 'jpg', 'png', 'ppm')):
+                        continue
+                    data.append([img_path, class_name])
+        # normal folders
+        else:
+            for img_path in glob.glob(class_path + "/*"):
+                if not img_path.endswith(('jpeg', 'jpg', 'png', 'ppm')):
+                    continue
+                data.append([img_path, class_name])
+    return data
+
+# class VialyticsTrafficSigns_Filter(ImageFolder):
+#     def __Filter__(self, dataroot, data_loader_type, empty_training_classes, training_classes_with_subfolders,
+#                  empty_test_classes, test_classes_with_subfolders):
+#         if data_loader_type == 'train':
+#             data = prepare_data(dataroot=dataroot, subdirectory='train/known', empty_classes=empty_training_classes,
+#                                 classes_with_subfolders=training_classes_with_subfolders)
+#
+#         elif data_loader_type == 'test':
+#             data = prepare_data(dataroot=dataroot, subdirectory='test/known', empty_classes=[],
+#                                 classes_with_subfolders=[])
+#
+#         # unknown data consists of background classes (not used in training) and unknown classes
+#         elif data_loader_type == 'out':
+#             data = prepare_data(dataroot=dataroot, subdirectory='test/unknown', empty_classes=empty_test_classes,
+#                                 classes_with_subfolders=test_classes_with_subfolders)
+#             data += prepare_data(dataroot=dataroot, subdirectory='test/background', empty_classes=[],
+#                                  classes_with_subfolders=[])
+#
+#         img_paths, targets = [], []
+#         label_index = get_label_index(include_background_training_classes=False)
+#         for img_paths_and_target in data:
+#             img_paths.append(img_paths_and_target[0])
+#             class_id = label_index[img_paths_and_target[1]]
+#             targets.append(torch.tensor([class_id]))
+#
+#         self.img_paths, self.targets = img_paths, targets
+
+
+#To do: What about background classes?
+class VialyticsTrafficSigns_OSR(Dataset):
+    def __init__(self, dataroot, data_loader_type, empty_classes, classes_with_subfolders, img_size):
+
+        if data_loader_type == 'train':
+            self.data = prepare_data(dataroot=dataroot, subdirectory='train/known', empty_classes=empty_classes,
+                                     classes_with_subfolders=classes_with_subfolders)
+
+        elif data_loader_type == 'test':
+            self.data = prepare_data(dataroot=dataroot, subdirectory='test/known', empty_classes=[],
+                                     classes_with_subfolders=[])
+
+        # unknown data consists of background classes (not used in training) and unknown classes
+        elif data_loader_type == 'out':
+            self.data = prepare_data(dataroot=dataroot, subdirectory='test/unknown', empty_classes=empty_classes,
+                                     classes_with_subfolders=classes_with_subfolders)
+            self.data += prepare_data(dataroot=dataroot, subdirectory='test/background', empty_classes=[],
+                                      classes_with_subfolders=[])
+
+        self.label_index = get_label_index(include_background_training_classes=True, include_unknown_classes=True)
+        self.img_dim = img_size  # format: (w, h)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        img_path, class_name = self.data[idx]
+        img = cv2.imread(img_path)
+        img = cv2.resize(img, self.img_dim)
+        class_id = self.label_index[class_name]
+        img_tensor = torch.from_numpy(img)
+        img_tensor = img_tensor.permute(2, 0, 1)
+        class_id = torch.tensor([class_id])
+        return img_tensor, class_id
+
+        # train_transform = transforms.Compose([
+        #     transforms.Resize((img_size, img_size)),
+        #     transforms.ToTensor(),
+        # ])
+        #
+        # transform = transforms.Compose([
+        #     transforms.Resize((img_size, img_size)),
+        #     transforms.ToTensor(),
+        # ])
+
+
